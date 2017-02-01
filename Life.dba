@@ -1,0 +1,276 @@
+Rem Project: Life
+Rem Created: 12/2/2006 1:53:59 PM
+
+Rem ***** Main Source File *****
+
+#constant unit = 1
+#constant board = 200
+#constant sensitivity = .1
+
+`client settings
+sync on
+sync rate 0
+hide mouse
+autocam off
+
+`variables and arrays
+local cursor as dword
+
+
+global go as boolean
+local x as integer
+local z as integer
+local obb as dword
+local zoom as integer
+local cell_x as dword
+local cell_y as dword
+global generation as dword
+global population as dword
+local dim life(board, board) as dword
+local dim change(board, board) as dword
+
+`make cursor
+cursor = make_object_cube(unit*.5)
+color object cursor, rgb(255, 0, 0)
+position object cursor, board/2*unit, 0, board/2*unit
+disable escapekey
+do
+
+  `automation mode
+  if spacekey() then go = 1
+  if controlkey() then go = 0
+  if returnkey() then clear()
+  if keystate(59) then save()
+  if keystate(60) then load()
+
+  `controls
+  position object cursor, object position x(cursor) - (mousemovex() * unit * sensitivity), 0, object position z(cursor) + (mousemovey() * unit * sensitivity)
+
+  `paint
+  if mouseclick() = 1
+
+    `calculate cell position
+    x = (object position x(cursor) + .5) / unit
+    z = (object position z(cursor) + .5) / unit
+
+    if x => 0 and x <= board and z => 0 and z <= board
+      `in bounds
+      if life(x, z)
+        `sphere already exists
+        if cell_x <> x or cell_z <> z
+          delete object life(x, z)
+          dec population
+          life(x, z) = 0
+          `set the current cell so creating/deleting doesn't occilate
+          cell_x = x
+          cell_z = z
+        endif
+      else
+        `sphere needs creating
+        if cell_x <> x or cell_z <> z
+          life(x, z) = make_object_sphere(unit)
+          inc population
+          position object life(x, z), x*unit, 0, z*unit
+          `set the current cell so creating/deleting doesn't occilate
+          cell_x = x
+          cell_z = z
+        endif
+      endif
+    else
+      `out of bounds
+      oob = make_object_sphere(unit)
+      color object oob, rgb(255, 0, 0)
+      position object oob, x*unit, 0, z*unit
+    endif
+  else
+    cell_x = -1
+    cell_y = -1
+  endif
+
+  if go
+    `do logic
+    inc generation
+    population = 0
+
+    `set up changing table
+    for x = 1 to board - 1
+      for z = 1 to board - 1
+
+        `check number of cell neighbors
+        ne = 0
+        for x2 = x - 1 to x + 1
+          for z2 = z - 1 to z + 1
+            if life(x2, z2) then inc ne
+          next z2
+        next x2
+
+        `compare number of neighbors to rules
+        if life(x, z)
+          inc population
+          `self doesn't count
+          dec ne
+
+          `die
+          if ne < 2 or ne > 3 then change(x, z) = 1
+
+        else
+
+          `birth
+          if ne = 3 then change(x, z) = 1
+
+        endif
+
+
+      next z
+    next x
+
+    `make changes
+    for x = 1 to board - 1
+      for z = 1 to board - 1
+        if change(x, z)
+          if life(x, z)
+            `die
+            delete object life(x, z)
+            life(x, z) = 0
+          else
+            `birth
+            life(x, z) = make_object_sphere(unit)
+            position object life(x, z), x*unit, 0, z*unit
+          endif
+          `change is done
+          change(x, z) = 0
+        endif
+      next z
+    next x
+
+  endif
+
+  `camera
+  dec zoom, mousemovez() / 48
+  if zoom < 10 then zoom = 10
+  position camera newxvalue(object position x(cursor), 0, unit*zoom), unit*zoom, newzvalue(object position z(cursor), 0, unit*zoom)
+  point camera object position x(cursor), object position y(cursor), object position z(cursor)
+
+
+  `HUD
+  text 0, 0, "Generation: " + str$(generation)
+  text 0, 10, "Population: " + str$(population)
+  text 0, screen height() - 10, "Screen FPS: " + str$(screen fps())
+  sync
+loop
+
+function make_object_cube(size as float)
+  local id as dword
+  id = free_obj()
+  make object cube id, size
+endfunction id
+
+function make_object_sphere(size as float)
+  local id as dword
+  id = free_obj()
+  make object sphere id, size
+endfunction id
+
+
+global id as dword
+function free_obj()
+  repeat
+    inc id
+    if id = 0 then id = 1
+  until object exist(id) = 0
+endfunction id
+
+function clear()
+  local x as dword
+  local z as dword
+
+  generation = 0
+  go = 0
+  population = 0
+  for x = 0 to board
+    for z = 0 to board
+      if life(x, z)
+        delete object life(x, z)
+        life(x, z) = 0
+      endif
+    next z
+  next x
+endfunction
+
+function save()
+
+  local filename as string
+  local confirm as string
+  local delay as integer
+
+  clear entry buffer
+
+  do
+    box screen width()/2 - 200, screen height()/2 - 50, screen width()/2 + 200, screen height()/2 + 50, rgb(0, 127, 127), rgb(0, 127, 0), rgb(0, 127, 127), rgb(0, 127, 0)
+    filename = entry$(1)
+    center text screen width()/2, screen height()/2, "Save Pattern as: " + filename
+    if returnkey() then exit
+    sync
+  loop
+  filename = left$(filename, len(filename) - 1) + ".life"
+  if file exist(filename)
+    delay = 400
+    clear entry buffer
+    do
+      dec delay
+      box screen width()/2 - 300, screen height()/2 - 50, screen width()/2 + 300, screen height()/2 + 50, rgb(0, 127, 127), rgb(0, 127, 0), rgb(0, 127, 127), rgb(0, 127, 0)
+      confirm = entry$(1)
+      center text screen width()/2, screen height()/2, "File already exists.  Do you want to overwrite? " + confirm
+      if returnkey() and delay <= 0 then exit
+      sync
+    loop
+    if upper$(left$(confirm, 1)) <> "Y" then exitfunction
+    delete file filename
+  endif
+  save array filename, life(0)
+
+endfunction
+
+function load()
+
+  local filename as string
+  local x as dword
+  local z as dword
+
+  clear entry buffer
+
+
+  do
+    box screen width()/2 - 200, screen height()/2 - 50, screen width()/2 + 200, screen height()/2 + 50, rgb(0, 127, 127), rgb(0, 127, 0), rgb(0, 127, 127), rgb(0, 127, 0)
+    filename = entry$(1)
+    center text screen width()/2, screen height()/2, "Load Pattern: " + filename
+    if returnkey() then exit
+    sync
+  loop
+  filename = left$(filename, len(filename) - 1) + ".life"
+
+  if file exist(filename) = 0
+    delay = 400
+    do
+      dec delay
+      box screen width()/2 - 100, screen height()/2 - 50, screen width()/2 + 100, screen height()/2 + 50, rgb(0, 127, 127), rgb(0, 127, 0), rgb(0, 127, 127), rgb(0, 127, 0)
+      center text screen width()/2, screen height()/2, "File does not exist."
+      if delay <= 0 then exitfunction
+      sync
+    loop
+  endif
+
+  clear()
+  load array filename, life(0)
+
+  for x = 0 to board
+    for z = 0 to board
+      if life(x, z)
+        life(x, z) = make_object_sphere(unit)
+        inc population
+        position object life(x, z), x*unit, 0, z*unit
+      endif
+    next z
+  next x
+
+endfunction
